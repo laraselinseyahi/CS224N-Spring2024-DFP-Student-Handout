@@ -52,6 +52,14 @@ class BertSelfAttention(nn.Module):
     # hello can you see my comment
 
     ### TODO
+    # keys and queries are of dimenion dk, and packed together into matrices K and Q 
+    # values are of dimension dv 
+    print(key)
+    print(query)
+    S = torch.matmul(key * query)
+    # attention = softmax (Q*K^T/√dk) * V 
+
+
     
     raise NotImplementedError
 
