@@ -66,15 +66,17 @@ class AdamW(Optimizer):
                     state['time_step'] = 0
 
                 state['time_step'] += 1
-                gradient = grad + group["weight_decay"] * p.data #ask this
+                weight_change = group['weight_decay'] 
+                gradient = grad + weight_change * p.data #ask this
                 betas = group["betas"]
                 state['first_moment_vec'] = betas[0] * state['first_moment_vec'] + (1 - betas[0]) * gradient 
                 state['second_moment_vec'] = betas[1] * state['second_moment_vec'] + (1 - betas[1]) * (gradient**2)
                 bias_corrected_first_moment = state['first_moment_vec'] / (1 - (betas[0]**state['time_step']))
                 bias_corrected_second_moment = state['second_moment_vec'] / (1 - (betas[1]**state['time_step']))
 
-                p.data = p.data - (alpha * bias_corrected_first_moment) / (torch.sqrt(bias_corrected_second_moment) + group["eps"])
-
+                p.data = p.data - alpha * bias_corrected_first_moment / (torch.sqrt(bias_corrected_second_moment) + group["eps"])
+                # Apply weight decay after the parameter update
+                # p.data -= group['lr']  * group['weight_decay'] 
                 
 
 
