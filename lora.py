@@ -5,7 +5,7 @@ class LORAExtension(nn.Module):
     def __init__(self, model, rank, d):
         super(LORAExtension, self).__init__() # constructor
 
-        self.model = model # setting the model to be the passed in LLM (will be miniBERT in our case)
+        self.model = model # to pass in miniBERT as the model
         self.A = nn.Parameter(torch.randn(d, rank))
         self.B = nn.Parameter(torch.randn(rank, d))
         self.C = nn.Parameter(torch.randn(d, rank))
@@ -24,4 +24,5 @@ class LORAExtension(nn.Module):
 
     def forward(self, *input):
         # Modify the model's forward function to use the adapted attention and FFN
+        # add in finetuning
         pass
