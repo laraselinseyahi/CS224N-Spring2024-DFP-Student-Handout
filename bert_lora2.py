@@ -3,46 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
+import math
 
-class LORALayer(nn.Module):
-    # def __init__(self, model, rank, d):
-    #     super(LORALayer, self).__init__() # constructor
-
-    #     self.model = model # to pass in miniBERT as the model
-    #     self.A = nn.Parameter(torch.randn(d, rank))
-    #     self.B = nn.Parameter(torch.randn(rank, d))
-    #     self.C = nn.Parameter(torch.randn(d, rank))
-    #     self.D = nn.Parameter(torch.randn(rank, d))
-      
-    def __init__(self, r: int, lora_alpha: int, lora_dropout: float, merge_weights: bool,):
-        self.r = r
-        self.lora_alpha = lora_alpha
-
-        # Mark the weight as unmerged
-        self.merged = False
-        self.merge_weights = merge_weights
-
-        # Optional dropout
-        if lora_dropout > 0.:
-            self.lora_dropout = nn.Dropout(p=lora_dropout)
-        else:
-            self.lora_dropout = lambda x: x
-
-    def adapt_attention(self, Q, K, V):
-        # adding low rank transformations to each of the query, key, and value matrices 
-        Q = Q + torch.matmul(Q, torch.matmul(self.A, self.B))
-        K = K + torch.matmul(K, torch.matmul(self.A, self.B))
-        V = V + torch.matmul(V, torch.matmul(self.A, self.B))
-        return Q, K, V
-    
-    def adapt_ffn(self, W1):
-        # modifies W1, which is the weight layer of the first linear layer in the FFN
-        return W1 + torch.matmul(W1, torch.matmul(self.C, self.D))
-
-    def forward(self, *input):
-        # Modify the model's forward function to use the adapted attention and FFN
-        # add in finetuning
-        pass
 
 class BertSelfAttention(nn.Module):
   def __init__(self, config):
@@ -59,17 +21,47 @@ class BertSelfAttention(nn.Module):
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
+    
+    # moving this to after intiialization of lora parameters
+    # self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # lora initialization
+    self.rank = config.lora_rank  # Rank of the low-rank matrices
+    self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+    self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+    self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+    self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+    self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+    self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+
+        # Initialize LoRA parameters
+    nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
+    nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
+    nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
+    nn.init.kaiming_uniform_(self.lora_B_key, a=math.sqrt(5))
+    nn.init.kaiming_uniform_(self.lora_A_value, a=math.sqrt(5))
+    nn.init.kaiming_uniform_(self.lora_B_value, a=math.sqrt(5))
+
+    # This dropout is applied to normalized attention scores following the original
+    # implementation of transformer. Although it is a bit unusual, we empirically
+    # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
   def transform(self, x, linear_layer):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
+
+    # lora adaptation
+    lora_proj = torch.matmul(x, self.lora_B.t())
+    lora_proj = torch.matmul(lora_proj, self.lora_A)
+
     # Next, we need to produce multiple heads for the proj. This is done by spliting the
     # hidden state to self.num_attention_heads, each of size self.attention_head_size.
     proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
+
     return proj
 
   def attention(self, key, query, value, attention_mask):
@@ -124,8 +116,8 @@ class BertSelfAttention(nn.Module):
     return attn_value
 
 
-class BertLayer(nn.Module, nn.LORALayer):
-  def __init__(self, config, lora_alpha: int=1, merge_weights: bool=True, r: int=0):
+class BertLayer(nn.Module):
+  def __init__(self, config):
     super().__init__()
     # Multi-head attention.
     self.self_attention = BertSelfAttention(config)
@@ -140,17 +132,6 @@ class BertLayer(nn.Module, nn.LORALayer):
     self.out_dense = nn.Linear(config.intermediate_size, config.hidden_size)
     self.out_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
     self.out_dropout = nn.Dropout(config.hidden_dropout_prob)
-
-    # intiializing a lora layer
-    nn.LoRALayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=0, merge_weights=merge_weights)
-    # trainable parameters
-    if r > 0:
-      self.lora_A = nn.Parameter(self.weight.new_zeros((r, config.num_embeddings))) 
-      self.lora_B = nn.Parameter(self.weight.new_zeros((config.embedding_dim, r)))
-      self.scaling = self.lora_alpha / self.r
-      # Freezing the pre-trained weight matrix
-      self.weight.requires_grad = False
-    self.reset_parameters()
 
   def add_norm(self, input, output, dense_layer, dropout, ln_layer):
     """
@@ -188,16 +169,12 @@ class BertLayer(nn.Module, nn.LORALayer):
     feed_forward_2 = self.interm_af(feed_forward_1)
 
     add_norm_2 = self.add_norm(added_norm, feed_forward_2, self.out_dense, self.out_dropout, self.out_layer_norm)
-
-    # addding lora norm/dropout
-    # unsure about what x should be here
-    add_norm_2 += (self.lora_dropout(self.x) @ self.lora_A.transpose(0, 1) @ self.lora_B.transpose(0, 1)) * self.scaling
     return add_norm_2
     raise NotImplementedError
 
 
 
-class BertModel(BertPreTrainedModel, LORALayer):
+class BertModel(BertPreTrainedModel):
   """
   The BERT model returns the final embeddings for each token in a sentence.
   
