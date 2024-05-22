@@ -18,6 +18,14 @@ class BertSelfAttention(nn.Module):
     self.query = nn.Linear(config.hidden_size, self.all_head_size)
     self.key = nn.Linear(config.hidden_size, self.all_head_size)
     self.value = nn.Linear(config.hidden_size, self.all_head_size)
+
+    # freeze these parameters do not have these parameters backtrack when trained
+    # iterate through layers
+    # we have lora updates for key, query, and value matrices; there are other layers
+    # freeze everything except the lora layers, google search for freezing documentation
+    # don't freeze in init; freeze everything but lora parameters
+    # how and when do we load parameters when training, this will indicate where we freeze parameters
+
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
@@ -60,6 +68,7 @@ class BertSelfAttention(nn.Module):
     proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
+    proj += lora_proj
 
     return proj, lora_proj
 
