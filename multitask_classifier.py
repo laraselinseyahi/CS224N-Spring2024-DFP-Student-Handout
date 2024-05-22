@@ -65,7 +65,7 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         # last-linear-layer mode does not require updating BERT paramters.
-        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"]
+        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"] # added lora model but does not work as an argument when training
         for param in self.bert.parameters():
             if config.fine_tune_mode == 'last-linear-layer':
                 param.requires_grad = False
