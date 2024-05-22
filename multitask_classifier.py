@@ -71,6 +71,7 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
+            # lora training code    
             elif config.fine_tune_mode == 'lora-model': 
                 param.requires_grad == False # freezing all params
                 for name, param in self.bert.named_parameters():
