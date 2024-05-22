@@ -21,7 +21,6 @@ class BertSelfAttention(nn.Module):
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
-    
     # moving this to after intiialization of lora parameters
     # self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
@@ -34,7 +33,7 @@ class BertSelfAttention(nn.Module):
     self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
     self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
 
-        # Initialize LoRA parameters
+    # Initialize LoRA parameters
     nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
@@ -62,7 +61,7 @@ class BertSelfAttention(nn.Module):
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
 
-    return proj
+    return proj, lora_proj
 
   def attention(self, key, query, value, attention_mask):
     # Each attention is calculated following eq. (1) of https://arxiv.org/pdf/1706.03762.pdf.
@@ -148,7 +147,7 @@ class BertLayer(nn.Module):
     dropout_applied = dropout(transformed) + input
     ln_output = ln_layer(dropout_applied)
     return ln_output
-    raise NotImplementedError
+    # raise NotImplementedError
 
 
   def forward(self, hidden_states, attention_mask):
@@ -170,7 +169,7 @@ class BertLayer(nn.Module):
 
     add_norm_2 = self.add_norm(added_norm, feed_forward_2, self.out_dense, self.out_dropout, self.out_layer_norm)
     return add_norm_2
-    raise NotImplementedError
+    # raise NotImplementedError
 
 
 
