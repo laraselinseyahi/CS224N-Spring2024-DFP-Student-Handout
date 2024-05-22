@@ -65,12 +65,18 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         # last-linear-layer mode does not require updating BERT paramters.
-        assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
+        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"]
         for param in self.bert.parameters():
             if config.fine_tune_mode == 'last-linear-layer':
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
+            elif config.fine_tune_mode == 'lora-model': 
+                param.requires_grad == False # freezing all params
+                for name, param in self.bert.named_parameters():
+                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
+                        param.requires_grad = True # unfreezing lora params
+
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
         raise NotImplementedError

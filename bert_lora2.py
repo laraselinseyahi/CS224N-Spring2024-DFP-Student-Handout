@@ -70,7 +70,7 @@ class BertSelfAttention(nn.Module):
     proj = proj.transpose(1, 2)
     proj += lora_proj
 
-    return proj, lora_proj
+    return proj
 
   def attention(self, key, query, value, attention_mask):
     # Each attention is calculated following eq. (1) of https://arxiv.org/pdf/1706.03762.pdf.
