@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
-
+import math
 
 class BertSelfAttention(nn.Module):
   def __init__(self, config):
@@ -21,23 +21,26 @@ class BertSelfAttention(nn.Module):
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+    lora_rank = getattr(config, 'lora_rank', None)
+    config.lora_rank = 4
 
+    if lora_rank is not None:
     # lora initialization
-    self.rank = config.lora_rank  # Rank of the low-rank matrices
-    self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+      self.rank = config.lora_rank  # Rank of the low-rank matrices
+      self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+      self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+      self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+      self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+      self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+      self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
 
-    # Initialize LoRA parameters
-    nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_key, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_A_value, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_value, a=math.sqrt(5))
+      # Initialize LoRA parameters
+      nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
+      nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
+      nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
+      nn.init.kaiming_uniform_(self.lora_B_key, a=math.sqrt(5))
+      nn.init.kaiming_uniform_(self.lora_A_value, a=math.sqrt(5))
+      nn.init.kaiming_uniform_(self.lora_B_value, a=math.sqrt(5))
 
   def transform(self, x, linear_layer):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
@@ -49,11 +52,11 @@ class BertSelfAttention(nn.Module):
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
 
+    if self.rank is not None:
     # lora adaptation
-    lora_proj = torch.matmul(x, self.lora_B.t())
-    lora_proj = torch.matmul(lora_proj, self.lora_A)
-
-    proj += lora_proj
+      lora_proj = torch.matmul(x, self.lora_B.t())
+      lora_proj = torch.matmul(lora_proj, self.lora_A)
+      proj += lora_proj
 
     return proj
 
