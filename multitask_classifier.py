@@ -64,6 +64,7 @@ class MultitaskBERT(nn.Module):
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.num_labels = config.num_labels
         # last-linear-layer mode does not require updating BERT paramters.
         assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"] # added lora model but does not work as an argument when training
         for param in self.bert.parameters():
@@ -80,10 +81,10 @@ class MultitaskBERT(nn.Module):
 
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
-        self.sentiment_classifier = nn.Linear(self.bert.config.hidden_size, config.num_labels_sentiment)
-        self.paraphrase_classifier = nn.Linear(self.bert.config.hidden_size, 1)
-        self.similarity_regressor = nn.Linear(self.bert.config.hidden_size, 1)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sentiment_classifier = torch.nn.Linear(config.hidden_size, 5)
+        self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 1)
+        self.similarity_regressor = torch.nn.Linear(config.hidden_size, 1)
+        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
 
 
     def forward(self, input_ids, attention_mask):
@@ -183,6 +184,7 @@ def train_multitask(args):
               'hidden_size': 768,
               'data_dir': '.',
               'fine_tune_mode': args.fine_tune_mode}
+    print("num labels: ", num_labels)
 
     config = SimpleNamespace(**config)
 
@@ -334,7 +336,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--fine-tune-mode", type=str,
                         help='last-linear-layer: the BERT parameters are frozen and the task specific head parameters are updated; full-model: BERT parameters are updated as well',
-                        choices=('last-linear-layer', 'full-model'), default="last-linear-layer")
+                        choices=('last-linear-layer', 'full-model', 'lora-model'), default="last-linear-layer")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
