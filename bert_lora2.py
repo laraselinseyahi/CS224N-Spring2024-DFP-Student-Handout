@@ -33,6 +33,7 @@ class BertSelfAttention(nn.Module):
     # self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     # lora initialization
+    # TODO maybe switch dimensions of the tensors?
     self.rank = config.lora_rank  # Rank of the low-rank matrices
     self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
     self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
@@ -54,20 +55,23 @@ class BertSelfAttention(nn.Module):
     # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
-  def transform(self, x, linear_layer):
+  def transform(self, x, linear_layer, lora_A, lora_B):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
 
     # lora adaptation
-    lora_proj = torch.matmul(x, self.lora_B.t())
-    lora_proj = torch.matmul(lora_proj, self.lora_A)
+    lora_proj = torch.matmul(x, lora_B)
+    lora_proj = torch.matmul(lora_proj, lora_A)
 
     # Next, we need to produce multiple heads for the proj. This is done by spliting the
     # hidden state to self.num_attention_heads, each of size self.attention_head_size.
     proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+    lora_proj = lora_proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
+    lora_proj = lora_proj.transpose(1, 2)
     proj += lora_proj
 
     return proj
@@ -116,9 +120,9 @@ class BertSelfAttention(nn.Module):
     # First, we have to generate the key, value, query for each token for multi-head attention
     # using self.transform (more details inside the function).
     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
-    key_layer = self.transform(hidden_states, self.key)
-    value_layer = self.transform(hidden_states, self.value)
-    query_layer = self.transform(hidden_states, self.query)
+    key_layer = self.transform(hidden_states, self.key, self.lora_A_key, self.lora_B_key)
+    value_layer = self.transform(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
+    query_layer = self.transform(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
