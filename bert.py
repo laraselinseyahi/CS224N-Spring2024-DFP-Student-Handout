@@ -27,22 +27,26 @@ class BertSelfAttention(nn.Module):
     # if lora_rank is not None:
     # lora initialization
     self.rank = config.lora_rank  # Rank of the low-rank matrices
-    self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+    self.lora_A_query = nn.Parameter(torch.Tensor(self.rank, self.all_head_size))
+    self.lora_B_query = nn.Parameter(torch.Tensor(config.hidden_size, self.rank))
+    
+    self.lora_A_key = nn.Parameter(torch.Tensor(self.rank, self.all_head_size))
+    self.lora_B_key = nn.Parameter(torch.Tensor(config.hidden_size, self.rank))
+
+    self.lora_A_value = nn.Parameter(torch.Tensor(self.rank, self.all_head_size))
+    self.lora_B_value = nn.Parameter(torch.Tensor(config.hidden_size, self.rank))
 
       # Initialize LoRA parameters
     nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
+
     nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_B_key, a=math.sqrt(5))
+
     nn.init.kaiming_uniform_(self.lora_A_value, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_B_value, a=math.sqrt(5))
 
-  def transform(self, x, linear_layer):
+  def transform(self, x, linear_layer, lora_A, lora_B):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
@@ -54,10 +58,14 @@ class BertSelfAttention(nn.Module):
 
     # if self.rank is not None:
     # lora adaptation
-    lora_proj = torch.matmul(x, self.lora_B_key.t())
-    lora_proj = lora_proj.view(bs, seq_len, self.num_attention_heads, self.rank)
+    lora_proj = torch.matmul(x, lora_B)
+    lora_proj = torch.matmul(lora_proj, lora_A)
+
+    proj = proj.reshape(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+    lora_proj = lora_proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+
+    proj = proj.transpose(1, 2)
     lora_proj = lora_proj.transpose(1, 2)
-    lora_proj = torch.matmul(lora_proj, self.lora_A_key)
     proj += lora_proj
 
     return proj
@@ -106,9 +114,14 @@ class BertSelfAttention(nn.Module):
     # First, we have to generate the key, value, query for each token for multi-head attention
     # using self.transform (more details inside the function).
     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
-    key_layer = self.transform(hidden_states, self.key)
-    value_layer = self.transform(hidden_states, self.value)
-    query_layer = self.transform(hidden_states, self.query)
+
+    key_layer = self.transform(hidden_states, self.key, self.lora_A_key, self.lora_B_key)
+    value_layer = self.transform(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
+    query_layer = self.transform(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
+
+    # key_layer = self.transform(hidden_states, self.key)
+    # value_layer = self.transform(hidden_states, self.value)
+    # query_layer = self.transform(hidden_states, self.query)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
