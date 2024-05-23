@@ -25,7 +25,7 @@ class BertSelfAttention(nn.Module):
     config.lora_rank = 4
 
     # if lora_rank is not None:
-    # lora initialization
+    # LoRA initialization
     self.rank = config.lora_rank  # Rank of the low-rank matrices
     self.lora_A_query = nn.Parameter(torch.Tensor(self.rank, self.all_head_size))
     self.lora_B_query = nn.Parameter(torch.Tensor(config.hidden_size, self.rank))
@@ -36,7 +36,7 @@ class BertSelfAttention(nn.Module):
     self.lora_A_value = nn.Parameter(torch.Tensor(self.rank, self.all_head_size))
     self.lora_B_value = nn.Parameter(torch.Tensor(config.hidden_size, self.rank))
 
-      # Initialize LoRA parameters
+    # Initialize LoRA parameters
     nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
     nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
 
@@ -56,7 +56,6 @@ class BertSelfAttention(nn.Module):
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
 
-    # if self.rank is not None:
     # lora adaptation
     lora_proj = torch.matmul(x, lora_B)
     lora_proj = torch.matmul(lora_proj, lora_A)
