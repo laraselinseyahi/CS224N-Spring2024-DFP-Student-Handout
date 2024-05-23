@@ -40,12 +40,17 @@ class BertSentimentClassifier(torch.nn.Module):
         self.bert = BertModel.from_pretrained('bert-base-uncased')
 
         # Pretrain mode does not require updating BERT paramters.
-        assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
+        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"]
         for param in self.bert.parameters():
             if config.fine_tune_mode == 'last-linear-layer':
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
+            elif config.fine_tune_mode == 'lora-model': 
+                param.requires_grad == False # freezing all params
+                for name, param in self.bert.named_parameters():
+                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
+                        param.requires_grad = True # unfreezing lora params
 
         # Create any instance variables you need to classify the sentiment of BERT embeddings.
         ### TODO
@@ -341,7 +346,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--fine-tune-mode", type=str,
                         help='last-linear-layer: the BERT parameters are frozen and the task specific head parameters are updated; full-model: BERT parameters are updated as well',
-                        choices=('last-linear-layer', 'full-model'), default="last-linear-layer")
+                        choices=('last-linear-layer', 'full-model', 'lora-model'), default="last-linear-layer")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
