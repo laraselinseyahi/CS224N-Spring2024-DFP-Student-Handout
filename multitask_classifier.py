@@ -195,7 +195,7 @@ def train_multitask(args):
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
     
-    para_train_data = SentencePairTestDataset(para_train_data, args)
+    para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
     para_test_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size,
@@ -203,7 +203,7 @@ def train_multitask(args):
     para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size,
                                         collate_fn=para_dev_data.collate_fn)
 
-    sts_train_data = SentencePairTestDataset(sts_train_data, args)
+    sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
     sts_test_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
@@ -230,7 +230,7 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
-    #initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
+    # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_test_dataloader, para_dev_dataloader), ("STS", sts_test_dataloader, sts_dev_dataloader)]:
         print(f"Training on " + dataset_name + " Dataset")
@@ -240,15 +240,35 @@ def train_multitask(args):
             train_loss = 0
             num_batches = 0
             for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-                b_ids, b_mask, b_labels = (batch['token_ids'],
+                if dataset_name == "SST":
+                    b_ids, b_mask, b_labels = (batch['token_ids'],
                                         batch['attention_mask'], batch['labels'])
 
-                b_ids = b_ids.to(device)
-                b_mask = b_mask.to(device)
-                b_labels = b_labels.to(device)
+                    b_ids = b_ids.to(device)
+                    b_mask = b_mask.to(device)
+                    b_labels = b_labels.to(device)
 
-                optimizer.zero_grad()
-                logits = model.predict_sentiment(b_ids, b_mask)
+                    optimizer.zero_grad()
+                    logits = model.predict_sentiment(b_ids, b_mask)
+
+                else:
+                    (b_ids1, b_mask1,
+                    b_ids2, b_mask2,
+                    b_labels, b_sent_ids) = (batch['token_ids_1'], batch['attention_mask_1'],
+                                batch['token_ids_2'], batch['attention_mask_2'],
+                                batch['labels'], batch['sent_ids'])
+
+                    b_ids1 = b_ids1.to(device)
+                    b_mask1 = b_mask1.to(device)
+                    b_ids2 = b_ids2.to(device)
+                    b_mask2 = b_mask2.to(device)
+                    b_labels = b_labels.to(device)
+                    optimizer.zero_grad()
+
+                if dataset_name == "PARA":
+                    logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
+                elif dataset_name == "STS":
+                    logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                 loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
                 loss.backward()
@@ -281,8 +301,8 @@ def train_multitask(args):
             
 
         # saving trained params
-        #args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
-        #save_model(model, optimizer, args, config, args.saved_params.pt)
+        # args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
+        # save_model(model, optimizer, args, config, args.saved_params.pt)
 
 
 def test_multitask(args):
