@@ -178,7 +178,7 @@ def train_multitask(args):
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
-    
+    """
     para_train_data = SentencePairTestDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
@@ -194,6 +194,7 @@ def train_multitask(args):
                                         collate_fn=sts_train_data.collate_fn)
     sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sts_dev_data.collate_fn)
+    """
 
     # Init model. Added Lora rank here
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
