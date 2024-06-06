@@ -292,7 +292,7 @@ def train_multitask(args):
                     b_mask1 = b_mask1.to(device)
                     b_ids2 = b_ids2.to(device)
                     b_mask2 = b_mask2.to(device)
-                    b_labels = b_labels.to(device)
+                    b_labels = b_labels.to(device).float()
                     optimizer.zero_grad()
 
                 if dataset_name == "PARA":
@@ -303,7 +303,7 @@ def train_multitask(args):
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                     # Ensure logits and labels are the same shape
                     #loss = F.mse_loss(logits, b_labels.float())
-                    loss = F.mse_loss(logits.squeeze(), b_labels.float().view(-1), reduction='sum') / args.batch_size
+                    loss = F.mse_loss(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / args.batch_size
 
 
                 #print(f"Logits: {logits}")
