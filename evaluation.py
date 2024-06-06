@@ -64,8 +64,9 @@ def model_eval_para(dataloader, model, device):
         b_mask2 = b_mask2.to(device)
 
         logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
-        logits = logits.detach().cpu().numpy()
-        preds = logits.sigmoid().round().flatten()
+        #logits = logits.detach().cpu().numpy()
+        #preds = logits.sigmoid().round().flatten()
+        preds = logits.sigmoid().round().flatten().cpu().numpy()
 
         b_labels = b_labels.flatten()
         y_true.extend(b_labels)
