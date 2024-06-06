@@ -111,7 +111,7 @@ class MultitaskBERT(nn.Module):
         ### TODO
         self.sentiment_classifier = torch.nn.Linear(config.hidden_size, 5)
         self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 1)
-        self.similarity_regressor = torch.nn.Linear(config.hidden_size, 6)
+        self.similarity_regressor = torch.nn.Linear(config.hidden_size, 1)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -258,7 +258,7 @@ def train_multitask(args):
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
-    for dataset_name, train_dataloader, dev_dataloader in [("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    for dataset_name, train_dataloader, dev_dataloader in [("STS", sts_train_dataloader, sts_dev_dataloader)]:
 
         print(f"Training on " + dataset_name + " Dataset")
         # Run for the specified number of epochs.
@@ -298,19 +298,13 @@ def train_multitask(args):
 
                 if dataset_name == "PARA":
                     logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.float())
-                    #loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    #loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.float())
+                    loss = F.binary_cross_entropy_with_logits(logits, b_labels.view(-1), reduction='sum') / args.batch_size
                 elif dataset_name == "STS":
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                     # Ensure logits and labels are the same shape
-                    if logits.shape != b_labels.shape:
-                        print(logits.shape)
-                        print(logits)
-                        print(b_labels.shape)
-                        print(b_labels)
-                        logits = logits.view(b_labels.shape)
-                    loss = F.mse_loss(logits, b_labels.float())
-                    #loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    #loss = F.mse_loss(logits, b_labels.float())
+                    loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 
                 #print(f"Logits: {logits}")
