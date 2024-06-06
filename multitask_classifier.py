@@ -187,7 +187,7 @@ def train_multitask(args):
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
-    """
+    
     para_train_data = SentencePairTestDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
@@ -203,7 +203,7 @@ def train_multitask(args):
                                         collate_fn=sts_train_data.collate_fn)
     sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sts_dev_data.collate_fn)
-    """
+    
 
     # Init model. Added Lora rank here
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -225,59 +225,53 @@ def train_multitask(args):
 
     initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
-    print(f"Training on SST Dataset")
-    # Run for the specified number of epochs.
-    for epoch in range(args.epochs):
-        model.train()
-        train_loss = 0
-        num_batches = 0
-        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            b_ids, b_mask, b_labels = (batch['token_ids'],
-                                       batch['attention_mask'], batch['labels'])
+    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_test_dataloader, para_dev_dataloader), ("STS", sts_test_dataloader, sts_dev_dataloader)]:
+        print(f"Training on " + dataset_name + " Dataset")
+        # Run for the specified number of epochs.
+        for epoch in range(args.epochs):
+            model.train()
+            train_loss = 0
+            num_batches = 0
+            for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                b_ids, b_mask, b_labels = (batch['token_ids'],
+                                        batch['attention_mask'], batch['labels'])
 
-            b_ids = b_ids.to(device)
-            b_mask = b_mask.to(device)
-            b_labels = b_labels.to(device)
+                b_ids = b_ids.to(device)
+                b_mask = b_mask.to(device)
+                b_labels = b_labels.to(device)
 
-            optimizer.zero_grad()
-            logits = model.predict_sentiment(b_ids, b_mask)
-            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                optimizer.zero_grad()
+                logits = model.predict_sentiment(b_ids, b_mask)
+                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
-            loss.backward()
-            optimizer.step()
+                loss.backward()
+                optimizer.step()
 
-            train_loss += loss.item()
-            num_batches += 1
+                train_loss += loss.item()
+                num_batches += 1
+
+            train_loss = train_loss / (num_batches)
+
+            train_acc, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
+            dev_acc, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
+            
+            if dev_acc > best_dev_acc:
+                best_dev_acc = dev_acc
+                save_model(model, optimizer, args, config, args.filepath)
+
+            print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+            print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
             """
             # Check parameter updated only Lora, bias and Layernorm
             for name, param in model.named_parameters():
-                if "lora" in name or "bias" in name or "Norm" in name or "norm" in name:
+                if "paraphrase" in name or "similarity" in name:
+                    assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+                elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
                     assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
                 else:
                     assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
             """
-
-        train_loss = train_loss / (num_batches)
-
-        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
-
-        if dev_acc > best_dev_acc:
-            best_dev_acc = dev_acc
-            save_model(model, optimizer, args, config, args.filepath)
-
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
-        print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
-
-        # Check parameter updated only Lora, bias and Layernorm
-        for name, param in model.named_parameters():
-            if "paraphrase" in name or "similarity" in name:
-                assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-            elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
-                assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
-            else:
-                assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-
+            
 
 
 def test_multitask(args):
