@@ -100,7 +100,7 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
         self.sentiment_classifier = torch.nn.Linear(config.hidden_size, 5)
-        self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 2)
+        self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 1)
         self.similarity_regressor = torch.nn.Linear(config.hidden_size, 6)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
 
