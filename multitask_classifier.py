@@ -33,7 +33,7 @@ from datasets import (
     load_multitask_data
 )
 
-from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
+from evaluation import model_eval_sst, model_eval_para, model_eval_sts, model_eval_multitask, model_eval_test_multitask
 
 
 TQDM_DISABLE=False
@@ -99,8 +99,8 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
         self.sentiment_classifier = torch.nn.Linear(config.hidden_size, 5)
-        self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 1)
-        self.similarity_regressor = torch.nn.Linear(config.hidden_size, 1)
+        self.paraphrase_classifier = torch.nn.Linear(config.hidden_size, 2)
+        self.similarity_regressor = torch.nn.Linear(config.hidden_size, 6)
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -271,6 +271,8 @@ def train_multitask(args):
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                 loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
+                #print(f"Logits: {logits}")
+                #print(f"Loss: {loss.item()}")
                 loss.backward()
                 optimizer.step()
 
@@ -279,15 +281,28 @@ def train_multitask(args):
 
             train_loss = train_loss / (num_batches)
 
-            train_acc, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
-            dev_acc, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
-            
-            if dev_acc > best_dev_acc:
-                best_dev_acc = dev_acc
-                save_model(model, optimizer, args, config, args.filepath)
+            if dataset_name == "SST":
+                train_acc, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
+                dev_acc, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
+                if dev_acc > best_dev_acc:
+                    best_dev_acc = dev_acc
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+                print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+            elif dataset_name == "PARA":
+                train_acc, train_f1, *_ = model_eval_para(train_dataloader, model, device)
+                dev_acc, dev_f1, *_ = model_eval_para(dev_dataloader, model, device)
+                if dev_acc > best_dev_acc:
+                    best_dev_acc = dev_acc
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+                print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+            else:
+                train_corr, *_ = model_eval_sts(train_dataloader, model, device)
+                dev_corr, *_ = model_eval_sts(dev_dataloader, model, device)
+                if dev_corr > best_dev_acc:
+                    best_dev_acc = dev_corr
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_corr :.3f}, dev acc :: {dev_acc :.3f}")
 
-            print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
-            print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+            save_model(model, optimizer, args, config, args.filepath)
             """
             # Check parameter updated only Lora, bias and Layernorm
             for name, param in model.named_parameters():
