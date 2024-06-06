@@ -80,18 +80,13 @@ class MultitaskBERT(nn.Module):
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
             elif config.fine_tune_mode == 'lora-model':
-                param.requires_grad == False # freezing all params
-                for name, param in self.bert.named_parameters():
-                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
-                        param.requires_grad = True # unfreezing lora params
-            elif config.fine_tune_mode == 'prefix-tuning-model':
-                param.requires_grad == False # freeze all pretrained parameters
-                for name, param in self.bert.named_parameters():
-                    if 'prefix' in name:
-                        param.requires_grad = True # unfreeze prefix parameters                        
                 param.requires_grad = False  # Default to freezing all parameters
                 if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
-                    param.requires_grad = True  # Unfreeze specific parameters                     
+                    param.requires_grad = True  # Unfreeze specific parameters
+            elif config.fine_tune_mode == 'prefix-tuning-model':
+                param.requires_grad == False # freeze all pretrained parameters
+                if 'prefix' in name:
+                    param.requires_grad = True # unfreeze prefix parameters                        
             
             if param.requires_grad:
                 unfrozen_params += param.numel()  # Count individual elements
@@ -235,7 +230,7 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
-    initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
+    #initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_test_dataloader, para_dev_dataloader), ("STS", sts_test_dataloader, sts_dev_dataloader)]:
         print(f"Training on " + dataset_name + " Dataset")
