@@ -304,7 +304,7 @@ def train_multitask(args):
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                     # Ensure logits and labels are the same shape
                     #loss = F.mse_loss(logits, b_labels.float())
-                    loss = F.mse_loss(logits, b_labels.float().view(-1), reduction='sum') / args.batch_size
+                    loss = F.mse_loss(logits.squeeze(), b_labels.float().view(-1), reduction='sum') / args.batch_size
 
 
                 #print(f"Logits: {logits}")
@@ -334,9 +334,9 @@ def train_multitask(args):
             else:
                 train_corr, *_ = model_eval_sts(train_dataloader, model, device)
                 dev_corr, *_ = model_eval_sts(dev_dataloader, model, device)
-                if dev_corr > best_dev_acc:
-                    best_dev_acc = dev_corr
-                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_corr :.3f}, dev acc :: {dev_acc :.3f}")
+                if dev_corr > best_dev_corr:
+                    best_dev_corr = dev_corr
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_corr :.3f}, dev acc :: {dev_corr :.3f}")
 
             save_model(model, optimizer, args, config, args.filepath)
 
