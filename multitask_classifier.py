@@ -25,6 +25,8 @@ from torch.utils.data import Subset
 from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+import pynvml
+import time
 
 from datasets import (
     SentenceClassificationDataset,
@@ -38,6 +40,14 @@ from evaluation import model_eval_sst, model_eval_para, model_eval_sts, model_ev
 
 
 TQDM_DISABLE=False
+
+# Initialize NVML
+pynvml.nvmlInit()
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # Assuming you're using GPU 0
+
+def get_gpu_usage():
+    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return info.used / (1024 ** 2)  # Convert bytes to megabytes
 
 
 # Fix the random seed.
@@ -239,6 +249,12 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
+    # Clear CUDA cache
+    torch.cuda.empty_cache()
+
+    # Initialize lists to track GPU usage
+    gpu_usage = []
+
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
@@ -251,6 +267,9 @@ def train_multitask(args):
             train_loss = 0
             num_batches = 0
             for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                # Record GPU usage
+                gpu_usage.append(get_gpu_usage())
+
                 if dataset_name == "SST":
                     b_ids, b_mask, b_labels = (batch['token_ids'],
                                         batch['attention_mask'], batch['labels'])
@@ -279,10 +298,12 @@ def train_multitask(args):
 
                 if dataset_name == "PARA":
                     logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.float())
+                    #loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
                 elif dataset_name == "STS":
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    loss = F.mse_loss(logits.squeeze(), b_labels.float())
+                    #loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 
                 #print(f"Logits: {logits}")
@@ -317,16 +338,23 @@ def train_multitask(args):
                 print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_corr :.3f}, dev acc :: {dev_acc :.3f}")
 
             save_model(model, optimizer, args, config, args.filepath)
-            """
-            # Check parameter updated only Lora, bias and Layernorm
-            for name, param in model.named_parameters():
-                if "paraphrase" in name or "similarity" in name:
-                    assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-                elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
-                    assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
-                else:
-                    assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-            """
+
+    # Calculate average and maximum GPU usage
+    avg_gpu_usage = sum(gpu_usage) / len(gpu_usage)
+    max_gpu_usage = max(gpu_usage)
+
+    print(f"Average GPU usage: {avg_gpu_usage:.2f} MB")
+    print(f"Maximum GPU usage: {max_gpu_usage:.2f MB}")
+    """
+    # Check parameter updated only Lora, bias and Layernorm
+    for name, param in model.named_parameters():
+        if "paraphrase" in name or "similarity" in name:
+            assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+        elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
+            assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
+        else:
+            assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+    """
             
 
         # saving trained params
