@@ -201,8 +201,7 @@ def train_multitask(args):
               'num_labels': num_labels,
               'hidden_size': 768,
               'data_dir': '.',
-              'fine_tune_mode': args.fine_tune_mode,
-              'lora_rank': 4}
+              'fine_tune_mode': args.fine_tune_mode}
 
     config = SimpleNamespace(**config)
 
