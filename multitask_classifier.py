@@ -281,8 +281,8 @@ def train_multitask(args):
             
 
         # saving trained params
-        args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
-        save_model(model, optimizer, args, config, args.saved_params.pt)
+        #args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
+        #save_model(model, optimizer, args, config, args.saved_params.pt)
 
 
 def test_multitask(args):
