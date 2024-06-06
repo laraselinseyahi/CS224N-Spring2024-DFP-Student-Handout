@@ -19,6 +19,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset
 
 # from bert_prefix_tuning import BertModel
 from bert_lora3 import BertModel
@@ -198,7 +199,11 @@ def train_multitask(args):
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    para_test_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size,
+    num_examples = min(1000, len(para_train_data))
+    subset_indices = random.sample(range(len(para_train_data)), num_examples)
+    para_train_data_subset = Subset(para_train_data, subset_indices)
+    
+    para_train_dataloader = DataLoader(para_train_data_subset, shuffle=True, batch_size=args.batch_size,
                                         collate_fn=para_train_data.collate_fn)
     para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size,
                                         collate_fn=para_dev_data.collate_fn)
@@ -206,7 +211,11 @@ def train_multitask(args):
     sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
-    sts_test_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
+    num_examples = min(1000, len(sts_train_data))
+    subset_indices = random.sample(range(len(sts_train_data)), num_examples)
+    sts_train_data_subset = Subset(sts_train_data, subset_indices)
+
+    sts_train_dataloader = DataLoader(sts_train_data_subset, shuffle=True, batch_size=args.batch_size,
                                         collate_fn=sts_train_data.collate_fn)
     sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sts_dev_data.collate_fn)
@@ -232,7 +241,7 @@ def train_multitask(args):
 
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
-    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_test_dataloader, para_dev_dataloader), ("STS", sts_test_dataloader, sts_dev_dataloader)]:
+    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
         print(f"Training on " + dataset_name + " Dataset")
         # Run for the specified number of epochs.
         for epoch in range(args.epochs):
@@ -250,6 +259,7 @@ def train_multitask(args):
 
                     optimizer.zero_grad()
                     logits = model.predict_sentiment(b_ids, b_mask)
+                    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
                 else:
                     (b_ids1, b_mask1,
@@ -267,9 +277,11 @@ def train_multitask(args):
 
                 if dataset_name == "PARA":
                     logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
                 elif dataset_name == "STS":
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
 
                 #print(f"Logits: {logits}")
                 #print(f"Loss: {loss.item()}")
