@@ -209,7 +209,7 @@ def train_multitask(args):
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    num_examples = min(1000, len(para_train_data))
+    num_examples = min(10000, len(para_train_data))
     subset_indices = random.sample(range(len(para_train_data)), num_examples)
     para_train_data_subset = Subset(para_train_data, subset_indices)
     
@@ -221,7 +221,7 @@ def train_multitask(args):
     sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
-    num_examples = min(1000, len(sts_train_data))
+    num_examples = min(10000, len(sts_train_data))
     subset_indices = random.sample(range(len(sts_train_data)), num_examples)
     sts_train_data_subset = Subset(sts_train_data, subset_indices)
 
@@ -257,8 +257,7 @@ def train_multitask(args):
 
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
-    #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
-    for dataset_name, train_dataloader, dev_dataloader in [("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
 
         print(f"Training on " + dataset_name + " Dataset")
         # Run for the specified number of epochs.
@@ -336,7 +335,7 @@ def train_multitask(args):
                 dev_corr, *_ = model_eval_sts(dev_dataloader, model, device)
                 if dev_corr > best_dev_corr:
                     best_dev_corr = dev_corr
-                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_corr :.3f}, dev acc :: {dev_corr :.3f}")
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train corr :: {train_corr :.3f}, dev corr :: {dev_corr :.3f}")
 
             save_model(model, optimizer, args, config, args.filepath)
 
