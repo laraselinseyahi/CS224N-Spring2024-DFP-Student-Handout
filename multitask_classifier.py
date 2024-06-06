@@ -298,7 +298,7 @@ def train_multitask(args):
                 if dataset_name == "PARA":
                     logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
                     #loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.float())
-                    loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.view(-1), reduction='sum') / args.batch_size
+                    loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / args.batch_size
                 elif dataset_name == "STS":
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                     # Ensure logits and labels are the same shape
