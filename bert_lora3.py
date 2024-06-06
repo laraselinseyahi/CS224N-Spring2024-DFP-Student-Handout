@@ -33,28 +33,20 @@ class BertSelfAttention(nn.Module):
     # self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     # lora initialization
-    self.rank = config.lora_rank  # Rank of the low-rank matrices
-    self.lora_A_query = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_query = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_value = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
-    self.lora_B_value = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-
-    # Initialize LoRA parameters
-    nn.init.kaiming_uniform_(self.lora_A_query, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_query, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_A_key, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_key, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_A_value, a=math.sqrt(5))
-    nn.init.kaiming_uniform_(self.lora_B_value, a=math.sqrt(5))
+    self.rank = 4  # Rank of the low-rank matrices
+    self.lora_A_query = nn.Parameter(torch.randn(self.rank, self.all_head_size))
+    self.lora_B_query = nn.Parameter(torch.zeros(config.hidden_size, self.rank))
+    #self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
+    #self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
+    self.lora_A_value = nn.Parameter(torch.randn(self.rank, self.all_head_size))
+    self.lora_B_value = nn.Parameter(torch.zeros(config.hidden_size, self.rank))
 
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
-  def transform(self, x, linear_layer, lora_A, lora_B):
+  def transform_lora(self, x, linear_layer, lora_A, lora_B):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
@@ -73,6 +65,17 @@ class BertSelfAttention(nn.Module):
     lora_proj = lora_proj.transpose(1, 2)
     proj += lora_proj
 
+    return proj
+
+  def transform(self, x, linear_layer):
+    # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
+    bs, seq_len = x.shape[:2]
+    proj = linear_layer(x)
+    # Next, we need to produce multiple heads for the proj. This is done by spliting the
+    # hidden state to self.num_attention_heads, each of size self.attention_head_size.
+    proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+    # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
+    proj = proj.transpose(1, 2)
     return proj
 
   def attention(self, key, query, value, attention_mask):
@@ -119,9 +122,9 @@ class BertSelfAttention(nn.Module):
     # First, we have to generate the key, value, query for each token for multi-head attention
     # using self.transform (more details inside the function).
     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
-    key_layer = self.transform(hidden_states, self.key, self.lora_A_key, self.lora_B_key)
-    value_layer = self.transform(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
-    query_layer = self.transform(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
+    key_layer = self.transform(hidden_states, self.key)
+    value_layer = self.transform_lora(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
+    query_layer = self.transform_lora(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
@@ -239,7 +242,7 @@ class BertModel(BertPreTrainedModel):
     embed_layer_norm_applied = self.embed_layer_norm(inputs_embeds + pos_embeds + tk_type_embeds)
     drop_out_applied = self.embed_dropout(embed_layer_norm_applied)
     return drop_out_applied
-    raise NotImplementedError
+    # raise NotImplementedError
 
 
   def encode(self, hidden_states, attention_mask):
