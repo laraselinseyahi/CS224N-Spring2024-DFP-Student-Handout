@@ -302,7 +302,10 @@ def train_multitask(args):
                     #loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
                 elif dataset_name == "STS":
                     logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.mse_loss(logits.squeeze(), b_labels.float())
+                    # Ensure logits and labels are the same shape
+                    if logits.shape != b_labels.shape:
+                        logits = logits.view(b_labels.shape)
+                    loss = F.mse_loss(logits, b_labels.float())
                     #loss = F.mse_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 
