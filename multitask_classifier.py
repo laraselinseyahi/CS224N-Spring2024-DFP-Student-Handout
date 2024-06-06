@@ -67,18 +67,27 @@ class MultitaskBERT(nn.Module):
         self.num_labels = config.num_labels
         # last-linear-layer mode does not require updating BERT paramters.
         assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"] # added lora model but does not work as an argument when training
-        for param in self.bert.parameters():
+        
+        frozen_params = 0
+        unfrozen_params = 0
+
+        for name, param in self.bert.named_parameters():
             if config.fine_tune_mode == 'last-linear-layer':
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
-            # lora training code
             elif config.fine_tune_mode == 'lora-model':
-                param.requires_grad == False # freezing default
-                for name, param in self.bert.named_parameters():
-                    if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
-                        print(name)
-                        param.requires_grad = True # unfreezing params                        
+                param.requires_grad = False  # Default to freezing all parameters
+                if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
+                    param.requires_grad = True  # Unfreeze specific parameters                     
+            
+            if param.requires_grad:
+                unfrozen_params += param.numel()  # Count individual elements
+            else:
+                frozen_params += param.numel()  # Count individual elements
+        print(f"Number of unfrozen parameters: {frozen_params}")
+        print(f"Number of total parameters: {unfrozen_params + frozen_params}")
+        print(f"Parameter Reduction: {100*frozen_params/(unfrozen_params + frozen_params)}")
 
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
