@@ -67,13 +67,18 @@ def model_eval_para(dataloader, model, device):
         #logits = logits.detach().cpu().numpy()
         #preds = logits.sigmoid().round().flatten()
         #preds = logits.sigmoid().round().flatten().cpu().numpy()
-        print("logits " + logits)
+        print("logits ")
+        print(logits)
         preds = torch.sigmoid(logits).round().detach().cpu().numpy().flatten()
-        print("truth " + b_labels)
+        print("truth ")
+        print(b_labels)
 
         b_labels = b_labels.cpu().numpy()
-        print("preds " + preds)
-        print("post processing truth " + b_labels)
+        print("preds ")
+        print(preds)
+        print("post processing truth ")
+        print(b_labels)
+
         break
         y_true.extend(b_labels)
         y_pred.extend(preds)
