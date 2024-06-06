@@ -46,7 +46,7 @@ class BertSelfAttention(nn.Module):
     # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
-  def transform(self, x, linear_layer, lora_A, lora_B):
+  def transform_lora(self, x, linear_layer, lora_A, lora_B):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
@@ -123,8 +123,8 @@ class BertSelfAttention(nn.Module):
     # using self.transform (more details inside the function).
     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
     key_layer = self.transform(hidden_states, self.key)
-    value_layer = self.transform(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
-    query_layer = self.transform(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
+    value_layer = self.transform_lora(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
+    query_layer = self.transform_lora(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
