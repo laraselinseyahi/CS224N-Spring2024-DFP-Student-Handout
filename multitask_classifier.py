@@ -271,7 +271,6 @@ def train_multitask(args):
 
         # Check parameter updated only Lora, bias and Layernorm
         for name, param in model.named_parameters():
-            print(".")
             if "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
                 assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
             else:
