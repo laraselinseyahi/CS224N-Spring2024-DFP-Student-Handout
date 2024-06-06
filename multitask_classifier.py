@@ -234,6 +234,10 @@ def train_multitask(args):
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
 
+        # saving trained params
+        args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
+        save_model(model, optimizer, args, config, args.saved_params.pt)
+
 
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
