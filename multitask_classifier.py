@@ -20,6 +20,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+# from bert_prefix_tuning import BertModel
 from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
@@ -66,7 +67,9 @@ class MultitaskBERT(nn.Module):
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.num_labels = config.num_labels
         # last-linear-layer mode does not require updating BERT paramters.
-        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"] # added lora model but does not work as an argument when training
+        assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model", "prefix-tuning-model"] # added lora model but does not work as an argument when training
+        for param in self.bert.parameters():
+            assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model"] # added lora model but does not work as an argument when training
         
         frozen_params = 0
         unfrozen_params = 0
@@ -77,6 +80,15 @@ class MultitaskBERT(nn.Module):
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
             elif config.fine_tune_mode == 'lora-model':
+                param.requires_grad == False # freezing all params
+                for name, param in self.bert.named_parameters():
+                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
+                        param.requires_grad = True # unfreezing lora params
+            elif config.fine_tune_mode == 'prefix-tuning-model':
+                param.requires_grad == False # freeze all pretrained parameters
+                for name, param in self.bert.named_parameters():
+                    if 'prefix' in name:
+                        param.requires_grad = True # unfreeze prefix parameters                        
                 param.requires_grad = False  # Default to freezing all parameters
                 if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
                     param.requires_grad = True  # Unfreeze specific parameters                     
@@ -273,6 +285,10 @@ def train_multitask(args):
             """
             
 
+        # saving trained params
+        args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
+        save_model(model, optimizer, args, config, args.saved_params.pt)
+
 
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
@@ -380,7 +396,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--fine-tune-mode", type=str,
                         help='last-linear-layer: the BERT parameters are frozen and the task specific head parameters are updated; full-model: BERT parameters are updated as well',
-                        choices=('last-linear-layer', 'full-model', 'lora-model'), default="last-linear-layer")
+                        choices=('last-linear-layer', 'full-model', 'lora-model', 'prefix-tuning-model'), default="last-linear-layer")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
