@@ -20,7 +20,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from bert import BertModel
+from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 
@@ -72,12 +72,13 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
-            # lora training code    
+            # lora training code
             elif config.fine_tune_mode == 'lora-model':
-                param.requires_grad == False # freezing all params
+                param.requires_grad == False # freezing default
                 for name, param in self.bert.named_parameters():
-                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
-                        param.requires_grad = True # unfreezing lora params                        
+                    if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
+                        print(name)
+                        param.requires_grad = True # unfreezing params                        
 
         # You will want to add layers here to perform the downstream tasks.
         ### TODO
@@ -177,24 +178,45 @@ def train_multitask(args):
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
+    
+    para_train_data = SentencePairTestDataset(para_train_data, args)
+    para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    # Init model.
+    para_test_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size,
+                                        collate_fn=para_train_data.collate_fn)
+    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size,
+                                        collate_fn=para_dev_data.collate_fn)
+
+    sts_train_data = SentencePairTestDataset(sts_train_data, args)
+    sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
+
+    sts_test_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
+                                        collate_fn=sts_train_data.collate_fn)
+    sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
+                                    collate_fn=sts_dev_data.collate_fn)
+
+    # Init model. Added Lora rank here
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
               'num_labels': num_labels,
               'hidden_size': 768,
               'data_dir': '.',
-              'fine_tune_mode': args.fine_tune_mode}
-    print("num labels: ", num_labels)
+              'fine_tune_mode': args.fine_tune_mode,
+              'lora_rank': 4}
 
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
     model = model.to(device)
 
+    print("Parameters: ", model.named_parameters)
+
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
+    initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
+
+    print(f"Training on SST Dataset")
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -218,6 +240,14 @@ def train_multitask(args):
             train_loss += loss.item()
             num_batches += 1
 
+            # Check parameter updated only Lora, bias and Layernorm
+            for name, param in model.named_parameters():
+                if "lora" in name or "bias" in name or "Norm" in name or "norm" in name:
+                    assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
+                else:
+                    assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+
+
         train_loss = train_loss / (num_batches)
 
         train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
@@ -228,6 +258,15 @@ def train_multitask(args):
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+        print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+
+        # Check parameter updated only Lora, bias and Layernorm
+        for name, param in model.named_parameters():
+            if "lora" in name or "bias" in name or "Norm" in name or "norm" in name:
+                assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
+            else:
+                assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+
 
 
 def test_multitask(args):
