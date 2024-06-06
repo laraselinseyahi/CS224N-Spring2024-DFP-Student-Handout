@@ -248,7 +248,7 @@ def train_multitask(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
-
+    best_dev_corr = 0
     # Clear CUDA cache
     torch.cuda.empty_cache()
 
