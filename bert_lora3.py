@@ -33,7 +33,7 @@ class BertSelfAttention(nn.Module):
     # self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     # lora initialization
-    self.rank = config.lora_rank  # Rank of the low-rank matrices
+    self.rank = 4  # Rank of the low-rank matrices
     self.lora_A_query = nn.Parameter(torch.randn(self.all_head_size, self.rank))
     self.lora_B_query = nn.Parameter(torch.zeros(self.rank, config.hidden_size))
     #self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
