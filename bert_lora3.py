@@ -34,12 +34,12 @@ class BertSelfAttention(nn.Module):
 
     # lora initialization
     self.rank = 4  # Rank of the low-rank matrices
-    self.lora_A_query = nn.Parameter(torch.randn(self.all_head_size, self.rank))
-    self.lora_B_query = nn.Parameter(torch.zeros(self.rank, config.hidden_size))
+    self.lora_A_query = nn.Parameter(torch.randn(self.rank, self.all_head_size))
+    self.lora_B_query = nn.Parameter(torch.zeros(config.hidden_size, self.rank))
     #self.lora_A_key = nn.Parameter(torch.Tensor(self.all_head_size, self.rank))
     #self.lora_B_key = nn.Parameter(torch.Tensor(self.rank, config.hidden_size))
-    self.lora_A_value = nn.Parameter(torch.randn(self.all_head_size, self.rank))
-    self.lora_B_value = nn.Parameter(torch.zeros(self.rank, config.hidden_size))
+    self.lora_A_value = nn.Parameter(torch.randn(self.rank, self.all_head_size))
+    self.lora_B_value = nn.Parameter(torch.zeros(config.hidden_size, self.rank))
 
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
