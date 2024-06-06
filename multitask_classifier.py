@@ -345,7 +345,7 @@ def train_multitask(args):
     max_gpu_usage = max(gpu_usage)
 
     print(f"Average GPU usage: {avg_gpu_usage:.2f} MB")
-    print(f"Maximum GPU usage: {max_gpu_usage:.2f MB}")
+    print(f"Maximum GPU usage: {max_gpu_usage:.2f} MB")
     """
     # Check parameter updated only Lora, bias and Layernorm
     for name, param in model.named_parameters():
