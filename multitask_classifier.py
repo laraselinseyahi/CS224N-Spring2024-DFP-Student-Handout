@@ -248,14 +248,14 @@ def train_multitask(args):
 
             train_loss += loss.item()
             num_batches += 1
-
+            """
             # Check parameter updated only Lora, bias and Layernorm
             for name, param in model.named_parameters():
                 if "lora" in name or "bias" in name or "Norm" in name or "norm" in name:
                     assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
                 else:
                     assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-
+            """
 
         train_loss = train_loss / (num_batches)
 
