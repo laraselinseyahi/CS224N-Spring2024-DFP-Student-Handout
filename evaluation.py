@@ -8,6 +8,8 @@ model_eval_multitask to evaluate your model on the 3 tasks' dev sets.
 '''
 
 import torch
+from torch import nn
+import torch.nn.functional as F
 from sklearn.metrics import f1_score, accuracy_score
 from tqdm import tqdm
 import numpy as np
@@ -23,6 +25,7 @@ def model_eval_sst(dataloader, model, device):
     y_pred = []
     sents = []
     sent_ids = []
+    dev_loss = []
     for step, batch in enumerate(tqdm(dataloader, desc=f'eval', disable=TQDM_DISABLE)):
         b_ids, b_mask, b_labels, b_sents, b_sent_ids = batch['token_ids'],batch['attention_mask'],  \
                                                         batch['labels'], batch['sents'], batch['sent_ids']
@@ -31,6 +34,7 @@ def model_eval_sst(dataloader, model, device):
         b_mask = b_mask.to(device)
 
         logits = model.predict_sentiment(b_ids, b_mask)
+        dev_loss.append(loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch.length())
         logits = logits.detach().cpu().numpy()
         preds = np.argmax(logits, axis=1).flatten()
 
@@ -43,14 +47,14 @@ def model_eval_sst(dataloader, model, device):
     f1 = f1_score(y_true, y_pred, average='macro')
     acc = accuracy_score(y_true, y_pred)
 
-    return acc, f1, y_pred, y_true, sents, sent_ids
+    return acc, dev_loss, f1, y_pred, y_true, sents, sent_ids
 
 def model_eval_para(dataloader, model, device):
     model.eval()  # Switch to eval model, will turn off randomness like dropout.
     y_true = []
     y_pred = []
-    sents = []
     sent_ids = []
+    dev_loss = []
     for step, batch in enumerate(tqdm(dataloader, desc=f'eval', disable=TQDM_DISABLE)):
         (b_ids1, b_mask1,
         b_ids2, b_mask2,
@@ -64,20 +68,13 @@ def model_eval_para(dataloader, model, device):
         b_mask2 = b_mask2.to(device)
 
         logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
+        dev_loss.append(loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
         #logits = logits.detach().cpu().numpy()
         #preds = logits.sigmoid().round().flatten()
         #preds = logits.sigmoid().round().flatten().cpu().numpy()
-        #print("logits ")
-        #print(logits)
         preds = torch.sigmoid(logits).round().detach().cpu().numpy().flatten()
-        #print("truth ")
-        #print(b_labels)
 
         b_labels = b_labels.cpu().numpy()
-        #print("preds ")
-        #print(preds)
-        #print("post processing truth ")
-        #print(b_labels)
         y_true.extend(b_labels)
         y_pred.extend(preds)
         sent_ids.extend(b_sent_ids)
@@ -85,14 +82,14 @@ def model_eval_para(dataloader, model, device):
     f1 = f1_score(y_true, y_pred, average='macro')
     acc = accuracy_score(y_true, y_pred)
 
-    return acc, f1, y_pred, y_true, sent_ids
+    return acc, dev_loss, f1, y_pred, y_true, sent_ids
 
 def model_eval_sts(dataloader, model, device):
     model.eval()  # Switch to eval model, will turn off randomness like dropout.
     y_true = []
     y_pred = []
-    sents = []
     sent_ids = []
+    dev_loss = []
     for step, batch in enumerate(tqdm(dataloader, desc=f'eval', disable=TQDM_DISABLE)):
         (b_ids1, b_mask1,
         b_ids2, b_mask2,
@@ -106,6 +103,7 @@ def model_eval_sts(dataloader, model, device):
         b_mask2 = b_mask2.to(device)
 
         logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+        dev_loss.append(loss = F.mse_loss(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
         logits = logits.detach().cpu().numpy()
         preds = logits.flatten()
 
@@ -117,7 +115,7 @@ def model_eval_sts(dataloader, model, device):
     pearson_mat = np.corrcoef(y_pred,y_true)
     sts_corr = pearson_mat[1][0]
 
-    return sts_corr, y_pred, y_true, sent_ids
+    return sts_corr, dev_loss, y_pred, y_true, sent_ids
 
 
 # Evaluate multitask model on dev sets.
