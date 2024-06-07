@@ -20,6 +20,8 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
 
 # from bert_prefix_tuning import BertModel
 from bert_lora3 import BertModel
@@ -243,18 +245,21 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    #print("Parameters: ", model.named_parameters)
-
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
     best_dev_corr = 0
+
+    train_losses, val_losses = [], []
+    train_metric, val_metric = [], []
+
     # Clear CUDA cache
     torch.cuda.empty_cache()
 
     # Initialize lists to track GPU usage
     gpu_usage = []
 
+    # keep track of parameters original state
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
@@ -318,27 +323,40 @@ def train_multitask(args):
             train_loss = train_loss / (num_batches)
 
             if dataset_name == "SST":
-                train_acc, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
-                dev_acc, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
+                train_acc, dev_loss, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
+                dev_acc, dev_loss, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
                 if dev_acc > best_dev_acc:
                     best_dev_acc = dev_acc
                 print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
                 print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
             elif dataset_name == "PARA":
-                train_acc, train_f1, *_ = model_eval_para(train_dataloader, model, device)
-                dev_acc, dev_f1, *_ = model_eval_para(dev_dataloader, model, device)
+                train_acc, dev_loss, train_f1, *_ = model_eval_para(train_dataloader, model, device)
+                dev_acc, dev_loss, dev_f1, *_ = model_eval_para(dev_dataloader, model, device)
                 if dev_acc > best_dev_acc:
                     best_dev_acc = dev_acc
                 print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
                 print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
             else:
-                train_corr, *_ = model_eval_sts(train_dataloader, model, device)
-                dev_corr, *_ = model_eval_sts(dev_dataloader, model, device)
+                train_corr, dev_loss, *_ = model_eval_sts(train_dataloader, model, device)
+                dev_corr, dev_loss, *_ = model_eval_sts(dev_dataloader, model, device)
                 if dev_corr > best_dev_corr:
                     best_dev_corr = dev_corr
                 print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train corr :: {train_corr :.3f}, dev corr :: {dev_corr :.3f}")
 
+            train_losses.append(train_loss)
+            val_losses.append(dev_loss)
+            if dataset_name == "STS":
+                train_metric.append(train_corr)
+                val_metric.append(dev_corr)
+            else:
+                train_metric.append(train_acc)
+                val_metric.append(dev_acc)
             save_model(model, optimizer, args, config, args.filepath)
+
+        # Plotting Metrics
+        plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_name)
+        train_losses, val_losses, train_metric, val_metric = [], [], [], []
+
 
     # Calculate average and maximum GPU usage
     avg_gpu_usage = sum(gpu_usage) / len(gpu_usage)
@@ -346,6 +364,7 @@ def train_multitask(args):
 
     print(f"Average GPU usage: {avg_gpu_usage:.2f} MB")
     print(f"Maximum GPU usage: {max_gpu_usage:.2f} MB")
+
     """
     # Check parameter updated only Lora, bias and Layernorm
     for name, param in model.named_parameters():
@@ -488,6 +507,28 @@ def get_args():
     args = parser.parse_args()
     return args
 
+
+def plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_name):
+    epochs = range(1, len(train_losses) + 1)
+
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, 'bo-', label='Training Loss')
+    plt.plot(epochs, val_losses, 'ro-', label='Validation Loss')
+    plt.title(dataset_name + 'Training and Validation Loss ')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, train_metric, 'bo-', label='Training Accuracy/Corr')
+    plt.plot(epochs, val_metric, 'ro-', label='Validation Accuracy')
+    plt.title(dataset_name + ' Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    plt.show()
 
 if __name__ == "__main__":
     args = get_args()
