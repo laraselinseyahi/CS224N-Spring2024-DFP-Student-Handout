@@ -34,7 +34,8 @@ def model_eval_sst(dataloader, model, device):
         b_mask = b_mask.to(device)
 
         logits = model.predict_sentiment(b_ids, b_mask)
-        dev_loss.append(loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch.length())
+        #dev_loss.append(loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / batch.length())
+        dev_loss.append(0)
         logits = logits.detach().cpu().numpy()
         preds = np.argmax(logits, axis=1).flatten()
 
@@ -68,7 +69,8 @@ def model_eval_para(dataloader, model, device):
         b_mask2 = b_mask2.to(device)
 
         logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
-        dev_loss.append(loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
+        dev_loss.append(0)
+        #dev_loss.append(loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
         #logits = logits.detach().cpu().numpy()
         #preds = logits.sigmoid().round().flatten()
         #preds = logits.sigmoid().round().flatten().cpu().numpy()
@@ -103,7 +105,8 @@ def model_eval_sts(dataloader, model, device):
         b_mask2 = b_mask2.to(device)
 
         logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-        dev_loss.append(loss = F.mse_loss(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
+        dev_loss.append(0)
+        #dev_loss.append(loss = F.mse_loss(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / batch.length())
         logits = logits.detach().cpu().numpy()
         preds = logits.flatten()
 
