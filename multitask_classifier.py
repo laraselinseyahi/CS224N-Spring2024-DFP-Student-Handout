@@ -19,11 +19,16 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
 
 # from bert_prefix_tuning import BertModel
 from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+import pynvml
+import time
 
 from datasets import (
     SentenceClassificationDataset,
@@ -33,10 +38,18 @@ from datasets import (
     load_multitask_data
 )
 
-from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
+from evaluation import model_eval_sst, model_eval_para, model_eval_sts, model_eval_multitask, model_eval_test_multitask
 
 
 TQDM_DISABLE=False
+
+# Initialize NVML
+pynvml.nvmlInit()
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # Assuming you're using GPU 0
+
+def get_gpu_usage():
+    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return info.used / (1024 ** 2)  # Convert bytes to megabytes
 
 
 # Fix the random seed.
@@ -80,18 +93,13 @@ class MultitaskBERT(nn.Module):
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
             elif config.fine_tune_mode == 'lora-model':
-                param.requires_grad == False # freezing all params
-                for name, param in self.bert.named_parameters():
-                    if 'lora' in name:  # This checks if the parameter name includes 'lora'
-                        param.requires_grad = True # unfreezing lora params
-            elif config.fine_tune_mode == 'prefix-tuning-model':
-                param.requires_grad == False # freeze all pretrained parameters
-                for name, param in self.bert.named_parameters():
-                    if 'prefix' in name:
-                        param.requires_grad = True # unfreeze prefix parameters                        
                 param.requires_grad = False  # Default to freezing all parameters
                 if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
-                    param.requires_grad = True  # Unfreeze specific parameters                     
+                    param.requires_grad = True  # Unfreeze specific parameters
+            elif config.fine_tune_mode == 'prefix-tuning-model':
+                param.requires_grad == False # freeze all pretrained parameters
+                if 'prefix' in name:
+                    param.requires_grad = True # unfreeze prefix parameters                        
             
             if param.requires_grad:
                 unfrozen_params += param.numel()  # Count individual elements
@@ -199,23 +207,31 @@ def train_multitask(args):
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
-    """
-    para_train_data = SentencePairTestDataset(para_train_data, args)
+    
+    para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    para_test_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size,
+    num_examples = min(10000, len(para_train_data))
+    subset_indices = random.sample(range(len(para_train_data)), num_examples)
+    para_train_data_subset = Subset(para_train_data, subset_indices)
+    
+    para_train_dataloader = DataLoader(para_train_data_subset, shuffle=True, batch_size=args.batch_size,
                                         collate_fn=para_train_data.collate_fn)
     para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size,
                                         collate_fn=para_dev_data.collate_fn)
 
-    sts_train_data = SentencePairTestDataset(sts_train_data, args)
+    sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
-    sts_test_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
+    num_examples = min(10000, len(sts_train_data))
+    subset_indices = random.sample(range(len(sts_train_data)), num_examples)
+    sts_train_data_subset = Subset(sts_train_data, subset_indices)
+
+    sts_train_dataloader = DataLoader(sts_train_data_subset, shuffle=True, batch_size=args.batch_size,
                                         collate_fn=sts_train_data.collate_fn)
     sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sts_dev_data.collate_fn)
-    """
+    
 
     # Init model. Added Lora rank here
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -229,71 +245,141 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    #print("Parameters: ", model.named_parameters)
-
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
+    best_dev_corr = 0
 
-    initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
+    train_losses, val_losses = [], []
+    train_metric, val_metric = [], []
 
-    print(f"Training on SST Dataset")
-    # Run for the specified number of epochs.
-    for epoch in range(args.epochs):
-        model.train()
-        train_loss = 0
-        num_batches = 0
-        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            b_ids, b_mask, b_labels = (batch['token_ids'],
-                                       batch['attention_mask'], batch['labels'])
+    # Clear CUDA cache
+    torch.cuda.empty_cache()
 
-            b_ids = b_ids.to(device)
-            b_mask = b_mask.to(device)
-            b_labels = b_labels.to(device)
+    # Initialize lists to track GPU usage
+    gpu_usage = []
 
-            optimizer.zero_grad()
-            logits = model.predict_sentiment(b_ids, b_mask)
-            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+    # keep track of parameters original state
+    # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
-            loss.backward()
-            optimizer.step()
+    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader)]:
 
-            train_loss += loss.item()
-            num_batches += 1
-            """
-            # Check parameter updated only Lora, bias and Layernorm
-            for name, param in model.named_parameters():
-                if "lora" in name or "bias" in name or "Norm" in name or "norm" in name:
-                    assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
+        print(f"Training on " + dataset_name + " Dataset")
+        # Run for the specified number of epochs.
+        for epoch in range(args.epochs):
+            model.train()
+            train_loss = 0
+            num_batches = 0
+            for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                # Record GPU usage
+                gpu_usage.append(get_gpu_usage())
+
+                if dataset_name == "SST":
+                    b_ids, b_mask, b_labels = (batch['token_ids'],
+                                        batch['attention_mask'], batch['labels'])
+
+                    b_ids = b_ids.to(device)
+                    b_mask = b_mask.to(device)
+                    b_labels = b_labels.to(device)
+
+                    optimizer.zero_grad()
+                    logits = model.predict_sentiment(b_ids, b_mask)
+                    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
                 else:
-                    assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-            """
+                    (b_ids1, b_mask1,
+                    b_ids2, b_mask2,
+                    b_labels, b_sent_ids) = (batch['token_ids_1'], batch['attention_mask_1'],
+                                batch['token_ids_2'], batch['attention_mask_2'],
+                                batch['labels'], batch['sent_ids'])
 
-        train_loss = train_loss / (num_batches)
+                    b_ids1 = b_ids1.to(device)
+                    b_mask1 = b_mask1.to(device)
+                    b_ids2 = b_ids2.to(device)
+                    b_mask2 = b_mask2.to(device)
+                    b_labels = b_labels.to(device).float()
+                    optimizer.zero_grad()
 
-        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+                if dataset_name == "PARA":
+                    logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
+                    #loss = F.binary_cross_entropy_with_logits(logits.squeeze(), b_labels.float())
+                    loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / args.batch_size
+                elif dataset_name == "STS":
+                    logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    # Ensure logits and labels are the same shape
+                    #loss = F.mse_loss(logits, b_labels.float())
+                    loss = F.mse_loss(logits.squeeze(-1), b_labels.view(-1), reduction='sum') / args.batch_size
 
-        if dev_acc > best_dev_acc:
-            best_dev_acc = dev_acc
+
+                #print(f"Logits: {logits}")
+                #print(f"Loss: {loss.item()}")
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+                num_batches += 1
+
+            train_loss = train_loss / (num_batches)
+
+            if dataset_name == "SST":
+                train_acc, dev_loss, train_f1, *_ = model_eval_sst(train_dataloader, model, device)
+                dev_acc, dev_loss, dev_f1, *_ = model_eval_sst(dev_dataloader, model, device)
+                if dev_acc > best_dev_acc:
+                    best_dev_acc = dev_acc
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+                print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+            elif dataset_name == "PARA":
+                train_acc, dev_loss, train_f1, *_ = model_eval_para(train_dataloader, model, device)
+                dev_acc, dev_loss, dev_f1, *_ = model_eval_para(dev_dataloader, model, device)
+                if dev_acc > best_dev_acc:
+                    best_dev_acc = dev_acc
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+                print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+            else:
+                train_corr, dev_loss, *_ = model_eval_sts(train_dataloader, model, device)
+                dev_corr, dev_loss, *_ = model_eval_sts(dev_dataloader, model, device)
+                if dev_corr > best_dev_corr:
+                    best_dev_corr = dev_corr
+                print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train corr :: {train_corr :.3f}, dev corr :: {dev_corr :.3f}")
+
+            train_losses.append(train_loss)
+            val_losses.append(dev_loss)
+            if dataset_name == "STS":
+                train_metric.append(train_corr)
+                val_metric.append(dev_corr)
+            else:
+                train_metric.append(train_acc)
+                val_metric.append(dev_acc)
             save_model(model, optimizer, args, config, args.filepath)
 
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
-        print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+        # Plotting Metrics
+        plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_name)
+        train_losses, val_losses, train_metric, val_metric = [], [], [], []
 
-        # Check parameter updated only Lora, bias and Layernorm
-        for name, param in model.named_parameters():
-            if "paraphrase" in name or "similarity" in name:
-                assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
-            elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
-                assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
-            else:
-                assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
 
+    # Calculate average and maximum GPU usage
+    avg_gpu_usage = sum(gpu_usage) / len(gpu_usage)
+    max_gpu_usage = max(gpu_usage)
+
+    print(f"Average GPU usage: {avg_gpu_usage:.2f} MB")
+    print(f"Maximum GPU usage: {max_gpu_usage:.2f} MB")
+
+    """
+    # Check parameter updated only Lora, bias and Layernorm
+    for name, param in model.named_parameters():
+        if "paraphrase" in name or "similarity" in name:
+            assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+        elif "lora" in name or "bias" in name or "Norm" in name or "norm" in name or "sentiment" in name:
+            assert not torch.equal(initial_params[name], param), f"Parameter {name} did not change but it should have."
+        else:
+            assert torch.equal(initial_params[name], param), f"Parameter {name} changed but it should not have."
+    """
+            
 
         # saving trained params
-        args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
-        save_model(model, optimizer, args, config, args.saved_params.pt)
+        # args.filepath = '/Users/susanahmed/Documents/GitHub/CS224N-Spring2024-DFP-Student-Handout/saved_params.pt'
+        # save_model(model, optimizer, args, config, args.saved_params.pt)
 
 
 def test_multitask(args):
@@ -422,9 +508,31 @@ def get_args():
     return args
 
 
+def plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_name):
+    epochs = range(1, len(train_losses) + 1)
+
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, 'bo-', label='Training Loss')
+    plt.plot(epochs, val_losses, 'ro-', label='Validation Loss')
+    plt.title(dataset_name + 'Training and Validation Loss ')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, train_metric, 'bo-', label='Training Accuracy/Corr')
+    plt.plot(epochs, val_metric, 'ro-', label='Validation Accuracy')
+    plt.title(dataset_name + ' Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    plt.show()
+
 if __name__ == "__main__":
     args = get_args()
     args.filepath = f'{args.fine_tune_mode}-{args.epochs}-{args.lr}-multitask.pt' # Save path.
     seed_everything(args.seed)  # Fix the seed for reproducibility.
     train_multitask(args)
-    test_multitask(args)
+    #test_multitask(args)

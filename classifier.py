@@ -8,14 +8,21 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import f1_score, accuracy_score
 
 from tokenizer import BertTokenizer
-# from bert import BertModel
-from bert_prefix_tuning import BertModel
+from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
-
+import pynvml
+import time
 
 TQDM_DISABLE=False
 
+# Initialize NVML
+pynvml.nvmlInit()
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # Assuming you're using GPU 0
+
+def get_gpu_usage():
+    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return info.used / (1024 ** 2)  # Convert bytes to megabytes
 
 # Fix the random seed.
 def seed_everything(seed=11711):
@@ -40,26 +47,32 @@ class BertSentimentClassifier(torch.nn.Module):
         self.num_labels = config.num_labels
         self.bert = BertModel.from_pretrained('bert-base-uncased')
 
+        frozen_params = 0
+        unfrozen_params = 0
+        
         # Pretrain mode does not require updating BERT paramters.
         assert config.fine_tune_mode in ["last-linear-layer", "full-model", "lora-model", "prefix-tuning-model"]
-        for param in self.bert.parameters():
+        for name, param in self.bert.named_parameters():
             if config.fine_tune_mode == 'last-linear-layer':
                 param.requires_grad = False
             elif config.fine_tune_mode == 'full-model':
                 param.requires_grad = True
-            elif config.fine_tune_mode == 'lora-model': 
-                param.requires_grad == False # freezing all params
-                for name, param in self.bert.named_parameters():
-                    if 'lora' in name or 'bias' in name or 'layer_norm' in name:  
-                        print("unfreezing: ", name)
-                        param.requires_grad = True # unfreeze lora, bias, and layer norms params
-                    else:
-                        print("freezing: ", name)
+            elif config.fine_tune_mode == 'lora-model':
+                param.requires_grad = False  # Default to freezing all parameters
+                if 'lora' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
+                    param.requires_grad = True  # Unfreeze specific parameters
             elif config.fine_tune_mode == 'prefix-tuning-model':
                 param.requires_grad == False # freeze all pretrained parameters
-                for name, param in self.bert.named_parameters():
-                    if 'prefix' in name:
-                        param.requires_grad = True # unfreeze prefix parameters
+                if 'prefix' in name:
+                    param.requires_grad = True # unfreeze prefix parameters                        
+            
+            if param.requires_grad:
+                unfrozen_params += param.numel()  # Count individual elements
+            else:
+                frozen_params += param.numel()  # Count individual elements
+        print(f"Number of unfrozen parameters: {frozen_params}")
+        print(f"Number of total parameters: {unfrozen_params + frozen_params}")
+        print(f"Parameter Reduction: {100*frozen_params/(unfrozen_params + frozen_params)}")
 
         # Create any instance variables you need to classify the sentiment of BERT embeddings.
         ### TODO
@@ -279,12 +292,22 @@ def train(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
+
+    # Clear CUDA cache
+    torch.cuda.empty_cache()
+
+    # Initialize lists to track GPU usage
+    gpu_usage = []
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
         train_loss = 0
         num_batches = 0
         for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+            # Record GPU usage
+            gpu_usage.append(get_gpu_usage())
+
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
 
@@ -313,6 +336,14 @@ def train(args):
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+        print(f"Train f1 :: {train_f1 :.3f}, dev f1 :: {dev_f1 :.3f}")
+
+    # Calculate average and maximum GPU usage
+    avg_gpu_usage = sum(gpu_usage) / len(gpu_usage)
+    max_gpu_usage = max(gpu_usage)
+
+    print(f"Average GPU usage: {avg_gpu_usage:.2f} MB")
+    print(f"Maximum GPU usage: {max_gpu_usage:.2f} MB")
 
 
 def test(args):
@@ -339,6 +370,7 @@ def test(args):
         print('DONE Test')
         with open(args.dev_out, "w+") as f:
             print(f"dev acc :: {dev_acc :.3f}")
+            print(f"dev f1 :: {dev_f1 :.3f}")
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s in zip(dev_sent_ids,dev_pred ):
                 f.write(f"{p} , {s} \n")
@@ -355,7 +387,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--fine-tune-mode", type=str,
                         help='last-linear-layer: the BERT parameters are frozen and the task specific head parameters are updated; full-model: BERT parameters are updated as well',
-                        choices=('last-linear-layer', 'full-model', 'lora-model', 'prefix-tuning-model'), default="last-linear-layer")
+                        choices=('last-linear-layer', 'full-model', 'lora-model'), default="last-linear-layer")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
