@@ -279,7 +279,6 @@ def train(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
-
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -296,7 +295,7 @@ def train(args):
             optimizer.zero_grad()
             logits = model(b_ids, b_mask)
             loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
-
+            # print(loss)
             loss.backward()
             optimizer.step()
 
@@ -304,6 +303,7 @@ def train(args):
             num_batches += 1
 
         train_loss = train_loss / (num_batches)
+        print(train_loss)
 
         train_acc, train_f1, *_  = model_eval(train_dataloader, model, device)
         dev_acc, dev_f1, *_ = model_eval(dev_dataloader, model, device)

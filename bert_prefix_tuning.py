@@ -151,7 +151,7 @@ class BertLayer(nn.Module):
 
     add_norm_2 = self.add_norm(added_norm, feed_forward_2, self.out_dense, self.out_dropout, self.out_layer_norm)
     return add_norm_2
-    raise NotImplementedError
+    # raise NotImplementedError
 
 
 
