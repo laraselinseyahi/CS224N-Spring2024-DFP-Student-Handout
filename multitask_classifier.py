@@ -262,8 +262,8 @@ def train_multitask(args):
     # keep track of parameters original state
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
-    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
-    #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader)]:
+    #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    for dataset_name, train_dataloader, dev_dataloader in [("PARA", para_train_dataloader, para_dev_dataloader)]:
 
         print(f"Training on " + dataset_name + " Dataset")
         # Run for the specified number of epochs.
@@ -532,7 +532,7 @@ def plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_nam
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.fine_tune_mode}-{args.epochs}-{args.lr}-multitask.pt' # Save path.
     seed_everything(args.seed)  # Fix the seed for reproducibility.
+    args.filepath = f'{args.fine_tune_mode}-PARAfinetuned-{args.epochs}-{args.lr}-multitask.pt' # Save path.
     train_multitask(args)
     #test_multitask(args)
