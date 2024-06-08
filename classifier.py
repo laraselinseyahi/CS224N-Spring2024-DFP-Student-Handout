@@ -63,7 +63,7 @@ class BertSentimentClassifier(torch.nn.Module):
                     param.requires_grad = True  # Unfreeze specific parameters
             elif config.fine_tune_mode == 'prefix-tuning-model':
                 param.requires_grad == False # freeze all pretrained parameters
-                if 'prefix' in name:
+                if 'prefix' in name or 'bias' in name or 'norm' in name or 'Norm' in name:  # Don't freeze bias, Lora, or LayerNorm
                     param.requires_grad = True # unfreeze prefix parameters                        
             
             if param.requires_grad:
