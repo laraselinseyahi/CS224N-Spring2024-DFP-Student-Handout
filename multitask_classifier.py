@@ -525,11 +525,13 @@ def plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_nam
 
     plt.subplot(1, 2, 2)
     plt.plot(epochs, train_metric, 'bo-', label='Training Accuracy/Corr')
-    plt.plot(epochs, val_metric, 'ro-', label='Validation Accuracy')
-    plt.title(dataset_name + ' Training and Validation Accuracy')
+    plt.plot(epochs, val_metric, 'ro-', label='Validation Accuracy/Corr')
+    plt.title(dataset_name + ' Training and Validation Accuracy/Corr')
     plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
+    plt.ylabel('Accuracy/Corr')
     plt.legend()
+
+    plt.savefig(f'training_validation_metrics_{dataset_name}.png')
 
     plt.show()
 
