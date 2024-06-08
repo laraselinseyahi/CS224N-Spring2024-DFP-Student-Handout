@@ -211,7 +211,7 @@ def train_multitask(args):
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    num_examples = min(10000, len(para_train_data))
+    num_examples = min(100000, len(para_train_data))
     subset_indices = random.sample(range(len(para_train_data)), num_examples)
     para_train_data_subset = Subset(para_train_data, subset_indices)
     
@@ -223,7 +223,6 @@ def train_multitask(args):
     sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
-    num_examples = min(10000, len(sts_train_data))
     subset_indices = random.sample(range(len(sts_train_data)), num_examples)
     sts_train_data_subset = Subset(sts_train_data, subset_indices)
 
