@@ -23,7 +23,7 @@ class BertSelfAttention(nn.Module):
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     # prefix tuning initialization
-    config.prefix_length = 10
+    config.prefix_length = 5
     config.prefix_embeddings = nn.Embedding(config.prefix_length, config.hidden_size)
     config.prefix_embeddings.weight.requires_grad = True
 
@@ -31,22 +31,15 @@ class BertSelfAttention(nn.Module):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
+
     # Next, we need to produce multiple heads for the proj. This is done by spliting the
     # hidden state to self.num_attention_heads, each of size self.attention_head_size.
     proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+
     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
     proj = proj.transpose(1, 2)
-
-    # lora adaptation
-    # lora_proj = torch.matmul(x, lora_B)
-    # lora_proj = torch.matmul(lora_proj, lora_A)
-
     proj = proj.reshape(bs, seq_len, self.num_attention_heads, self.attention_head_size)
-    # lora_proj = lora_proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
-
     proj = proj.transpose(1, 2)
-    # lora_proj = lora_proj.transpose(1, 2)
-    # proj += lora_proj
 
     return proj
 
@@ -95,13 +88,10 @@ class BertSelfAttention(nn.Module):
     # using self.transform (more details inside the function).
     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
 
-    # key_layer = self.transform(hidden_states, self.key, self.lora_A_key, self.lora_B_key)
-    # value_layer = self.transform(hidden_states, self.value, self.lora_A_value, self.lora_B_value)
-    # query_layer = self.transform(hidden_states, self.query, self.lora_A_query, self.lora_B_query)
-
     key_layer = self.transform(hidden_states, self.key)
     value_layer = self.transform(hidden_states, self.value)
     query_layer = self.transform(hidden_states, self.query)
+
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
@@ -161,7 +151,7 @@ class BertLayer(nn.Module):
 
     add_norm_2 = self.add_norm(added_norm, feed_forward_2, self.out_dense, self.out_dropout, self.out_layer_norm)
     return add_norm_2
-    raise NotImplementedError
+    # raise NotImplementedError
 
 
 
