@@ -259,10 +259,10 @@ def train_multitask(args):
     # initial_params = {name: param.clone().detach() for name, param in model.named_parameters()}
 
     # Choose one fintuning mode
-    #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader), ("PARA", para_train_dataloader, para_dev_dataloader), ("STS", sts_train_dataloader, sts_dev_dataloader)]:
     #for dataset_name, train_dataloader, dev_dataloader in [("SST", sst_train_dataloader, sst_dev_dataloader)]:
     #for dataset_name, train_dataloader, dev_dataloader in [("PARA", para_train_dataloader, para_dev_dataloader)]:
-    for dataset_name, train_dataloader, dev_dataloader in [("STS", sts_train_dataloader, sts_dev_dataloader)]:
+    #for dataset_name, train_dataloader, dev_dataloader in [("STS", sts_train_dataloader, sts_dev_dataloader)]:
 
         print(f"Training on " + dataset_name + " Dataset")
         # Run for the specified number of epochs.
@@ -536,6 +536,6 @@ if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)  # Fix the seed for reproducibility.
     # HERE PUT THE NAME OF THE FILE TO SAVE PARAMETERS, Change everytime "parafinetuned"
-    args.filepath = f'{args.fine_tune_mode}-STSfinetuned-{args.epochs}-{args.lr}-multitask.pt' # Save path.
+    args.filepath = f'{args.fine_tune_mode}-FULLfinetuned-{args.epochs}-{args.lr}-multitask.pt' # Save path.
     train_multitask(args)
     test_multitask(args)
