@@ -527,6 +527,7 @@ def plot_metrics(train_losses, val_losses, train_metric, val_metric, dataset_nam
     plt.ylabel('Accuracy/Corr')
     plt.legend()
 
+    plt.tight_layout()
     plt.savefig(f'training_validation_metrics_{dataset_name}.png')
 
     plt.show()
