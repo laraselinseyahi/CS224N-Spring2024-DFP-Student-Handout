@@ -23,8 +23,8 @@ from torch.utils.data import Subset
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 
-from bert_prefix_tuning import BertModel
-# from bert_lora3 import BertModel
+#from bert_prefix_tuning import BertModel
+from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 import pynvml
@@ -211,7 +211,7 @@ def train_multitask(args):
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    num_examples = min(50000, len(para_train_data))
+    num_examples = min(10000, len(para_train_data))
     subset_indices = random.sample(range(len(para_train_data)), num_examples)
     para_train_data_subset = Subset(para_train_data, subset_indices)
     
