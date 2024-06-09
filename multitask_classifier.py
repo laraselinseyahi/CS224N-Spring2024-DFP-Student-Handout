@@ -23,8 +23,8 @@ from torch.utils.data import Subset
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 
-# from bert_prefix_tuning import BertModel
-from bert_lora3 import BertModel
+from bert_prefix_tuning import BertModel
+# from bert_lora3 import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 import pynvml
